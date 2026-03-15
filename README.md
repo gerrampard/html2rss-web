@@ -41,7 +41,7 @@ curl -X POST "https://your-domain.com/api/v1/feeds" \
 ## Deploy (Docker Compose)
 
 1. Generate a key: `openssl rand -hex 32`.
-2. Set `HTML2RSS_SECRET_KEY` in `docker-compose.yml`.
+2. Export `HTML2RSS_SECRET_KEY`, `HEALTH_CHECK_TOKEN`, and `BROWSERLESS_IO_API_TOKEN` in your shell or `.env`.
 3. Start: `docker-compose up`.
 
 UI + API run on `http://localhost:4000`. The app exits if the secret key is missing.
