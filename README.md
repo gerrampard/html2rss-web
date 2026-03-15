@@ -22,7 +22,7 @@ html2rss-web converts arbitrary websites into RSS 2.0 feeds with a slim Ruby bac
 - **Backend:** Ruby + Roda, backed by the `html2rss` gem for extraction.
 - **Frontend:** Preact app built with Vite into `public/frontend`.
 - **Distribution:** Docker Compose by default; other deployments require manual wiring.
-- [v2 Migration Guide](docs/migrations/v2.md)
+- [Project notes](docs/README.md)
 
 ## REST API Snapshot
 
@@ -68,7 +68,7 @@ Dev URLs: Ruby app at `http://localhost:4000`, frontend dev server at `http://lo
 
 Backend code under the `Html2rss::Web` namespace now lives under `app/web/**`, so Zeitwerk can mirror constant paths directly instead of relying on directory-specific namespace wiring.
 `make ready` also runs `rake zeitwerk:verify`, which eager-loads the app and fails on loader drift early.
-For contributors and AI agents changing backend structure, follow the placement rules in [docs/ai-agent-app-web.md](docs/ai-agent-app-web.md).
+For contributors and AI agents changing backend structure, follow the rules in [docs/README.md](docs/README.md).
 
 ## Make Targets
 
