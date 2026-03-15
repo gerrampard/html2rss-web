@@ -1,4 +1,4 @@
-require:
+plugins:
   - rubocop-performance
   - rubocop-rspec
   - rubocop-rake
@@ -7,11 +7,18 @@ require:
 AllCops:
   DisplayCopNames: true
   NewCops: enable
+  Exclude:
+    - '**/*.yml'
+    - '**/*.yaml'
+    - '**/.tool-versions'
+
+Layout/LineLength:
+  Max: 120
 
 Metrics/BlockLength:
   Exclude:
     - Rakefile
-  ExcludedMethods:
+  AllowedMethods:
     - route
 
 Naming/RescuedExceptionsVariableName:
@@ -21,6 +28,7 @@ Layout/ClassStructure:
   Enabled: true
 
 Style/Documentation:
+  Enabled: false
   AllowedConstants:
     - App
 
@@ -28,3 +36,12 @@ RSpec/SpecFilePathFormat:
   Exclude:
     - 'spec/html2rss/web/app/*_spec.rb'
     - 'spec/html2rss/web/app/health_check/auth_spec.rb'
+
+RSpec/DescribeClass:
+  Enabled: false
+
+RSpec/ExampleLength:
+  Max: 12
+
+RSpec/MultipleExpectations:
+  Max: 2

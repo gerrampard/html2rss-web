@@ -1,0 +1,532 @@
+---
+openapi: 3.0.3
+info:
+  title: html2rss-web API
+  version: 1.0.0
+  description: RESTful API for converting websites to RSS feeds.
+  contact:
+    name: html2rss-web Support
+    url: https://github.com/html2rss/html2rss-web
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+- url: https://api.html2rss.dev/api/v1
+  description: Production server
+- url: http://127.0.0.1:4000/api/v1
+  description: Development server
+paths:
+  "/":
+    get:
+      description: API metadata
+      operationId: getApiMetadata
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      api:
+                        properties:
+                          description:
+                            type: string
+                          name:
+                            type: string
+                          openapi_url:
+                            type: string
+                        required:
+                        - name
+                        - description
+                        - openapi_url
+                        type: object
+                      instance:
+                        properties:
+                          feed_creation:
+                            properties:
+                              access_token_required:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            - access_token_required
+                            type: object
+                        required:
+                        - feed_creation
+                        type: object
+                    required:
+                    - api
+                    - instance
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                type: object
+          description: returns instance feed-creation capability
+      security: []
+      summary: API metadata
+      tags:
+      - Root
+  "/feeds":
+    post:
+      description: Create a feed
+      operationId: createFeed
+      parameters:
+      - in: header
+        name: Authorization
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                strategy:
+                  type: string
+                url:
+                  type: string
+              required:
+              - url
+              - strategy
+              type: object
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      feed:
+                        properties:
+                          created_at:
+                            type: string
+                          feed_token:
+                            type: string
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          public_url:
+                            type: string
+                          strategy:
+                            type: string
+                          updated_at:
+                            type: string
+                          url:
+                            type: string
+                        required:
+                        - id
+                        - name
+                        - url
+                        - strategy
+                        - feed_token
+                        - public_url
+                        - created_at
+                        - updated_at
+                        type: object
+                    required:
+                    - feed
+                    type: object
+                  meta:
+                    properties:
+                      created:
+                        type: boolean
+                    required:
+                    - created
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                - meta
+                type: object
+          description: creates a feed when request is valid
+        '401':
+          content:
+            application/json:
+              schema:
+                properties:
+                  error:
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                    - message
+                    - code
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - error
+                type: object
+          description: returns 401 with UNAUTHORIZED error payload
+        '403':
+          content:
+            application/json:
+              schema:
+                properties:
+                  error:
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                    - message
+                    - code
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - error
+                type: object
+          description: returns forbidden for authenticated requests when auto source
+            is disabled
+      security:
+      - BearerAuth: []
+      summary: Create a feed
+      tags:
+      - Feeds
+  "/feeds/{token}":
+    get:
+      description: Render feed by token
+      operationId: renderFeedByToken
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/feed+json:
+              schema:
+                type: string
+            application/xml:
+              schema:
+                type: string
+          description: renders feed for a valid token
+        '401':
+          content:
+            application/feed+json:
+              example:
+                title: Error
+                version: https://jsonfeed.org/version/1.1
+              schema:
+                type: string
+            application/xml:
+              example: |-
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0"><channel><title>Error</title><description>Internal Server Error</description></channel></rss>
+              schema:
+                type: string
+          description: returns JSON Feed-shaped errors when requested by json extension
+        '403':
+          content:
+            application/feed+json:
+              example:
+                title: Error
+                version: https://jsonfeed.org/version/1.1
+              schema:
+                type: string
+            application/xml:
+              example: |-
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0"><channel><title>Error</title><description>Internal Server Error</description></channel></rss>
+              schema:
+                type: string
+          description: returns JSON Feed-shaped forbidden errors when requested through
+            Accept
+        '500':
+          content:
+            application/feed+json:
+              example:
+                title: Error
+                version: https://jsonfeed.org/version/1.1
+              schema:
+                type: string
+            application/xml:
+              example: |-
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0"><channel><title>Error</title><description>Internal Server Error</description></channel></rss>
+              schema:
+                type: string
+          description: returns non-cacheable json feed errors when service generation
+            fails
+      security: []
+      summary: Render feed by token
+      tags:
+      - Feeds
+  "/health":
+    get:
+      description: Authenticated health check
+      operationId: getHealthStatus
+      parameters:
+      - in: header
+        name: Authorization
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      health:
+                        properties:
+                          checks:
+                            properties: {}
+                            type: object
+                          environment:
+                            type: string
+                          status:
+                            type: string
+                          timestamp:
+                            type: string
+                          uptime:
+                            format: float
+                            type: number
+                        required:
+                        - status
+                        - timestamp
+                        - environment
+                        - uptime
+                        - checks
+                        type: object
+                    required:
+                    - health
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                type: object
+          description: returns health status when token is valid
+        '401':
+          content:
+            application/json:
+              schema:
+                properties:
+                  error:
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                    - message
+                    - code
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - error
+                type: object
+          description: returns 401 with UNAUTHORIZED error payload
+        '500':
+          content:
+            application/json:
+              schema:
+                properties:
+                  error:
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                    - message
+                    - code
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - error
+                type: object
+          description: returns error when configuration fails
+      security:
+      - BearerAuth: []
+      summary: Authenticated health check
+      tags:
+      - Health
+  "/health/live":
+    get:
+      description: Liveness probe
+      operationId: getLivenessProbe
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      health:
+                        properties:
+                          status:
+                            type: string
+                          timestamp:
+                            type: string
+                        required:
+                        - status
+                        - timestamp
+                        type: object
+                    required:
+                    - health
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                type: object
+          description: returns liveness status without authentication
+      security: []
+      summary: Liveness probe
+      tags:
+      - Health
+  "/health/ready":
+    get:
+      description: Readiness probe
+      operationId: getReadinessProbe
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      health:
+                        properties:
+                          checks:
+                            properties: {}
+                            type: object
+                          environment:
+                            type: string
+                          status:
+                            type: string
+                          timestamp:
+                            type: string
+                          uptime:
+                            format: float
+                            type: number
+                        required:
+                        - status
+                        - timestamp
+                        - environment
+                        - uptime
+                        - checks
+                        type: object
+                    required:
+                    - health
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                type: object
+          description: returns readiness status without authentication
+      security: []
+      summary: Readiness probe
+      tags:
+      - Health
+  "/openapi.yaml":
+    get:
+      description: OpenAPI specification
+      operationId: getOpenApiSpec
+      responses:
+        '200':
+          content:
+            application/yaml:
+              schema:
+                type: string
+          description: serves the OpenAPI document as YAML
+      security: []
+      summary: OpenAPI specification
+      tags:
+      - Root
+  "/strategies":
+    get:
+      description: List extraction strategies
+      operationId: listStrategies
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    properties:
+                      strategies:
+                        items:
+                          properties:
+                            display_name:
+                              type: string
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                          - id
+                          - name
+                          - display_name
+                          type: object
+                        type: array
+                    required:
+                    - strategies
+                    type: object
+                  meta:
+                    properties:
+                      total:
+                        type: integer
+                    required:
+                    - total
+                    type: object
+                  success:
+                    type: boolean
+                required:
+                - success
+                - data
+                - meta
+                type: object
+          description: returns available strategies
+      security: []
+      summary: List extraction strategies
+      tags:
+      - Strategies
+components:
+  securitySchemes:
+    BearerAuth:
+      description: Bearer token authentication for API access.
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+tags:
+- name: Root
+  description: API metadata and service-level information.
+- name: Health
+  description: Health and readiness endpoints.
+- name: Strategies
+  description: Feed extraction strategy discovery.
+- name: Feeds
+  description: Feed creation and feed rendering operations.

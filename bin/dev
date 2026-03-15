@@ -1,20 +1,94 @@
 #!/usr/bin/env bash
 # frozen_string_literal: true
 
-# Development server startup script
 set -e
 
-# Load environment variables if .env file exists
+# Load .env if exists
 if [ -f .env ]; then
   export $(cat .env | grep -v '^#' | xargs)
 fi
 
-# Set default environment
 export RACK_ENV=${RACK_ENV:-development}
 
-echo "Starting html2rss-web in development mode..."
-echo "Environment: $RACK_ENV"
-echo "Port: ${PORT:-3000}"
+# BusyBox lsof in this image reports internal FDs and exits 0, so prefer netstat.
+port_in_use() {
+  netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$1$"
+}
 
-# Start the development server
-bundle exec rackup -p ${PORT:-3000} -o 0.0.0.0
+# Cleanup function for graceful shutdown
+cleanup() {
+  echo ""
+  echo "🛑 Shutting down development servers..."
+
+  # Kill Ruby server
+  if [ ! -z "$RUBY_PID" ]; then
+    kill $RUBY_PID 2>/dev/null || true
+    wait $RUBY_PID 2>/dev/null || true
+  fi
+
+  # Kill frontend dev server and its children
+  if [ ! -z "$FRONTEND_PID" ]; then
+    # Kill the npm process and its children
+    pkill -P $FRONTEND_PID 2>/dev/null || true
+    kill $FRONTEND_PID 2>/dev/null || true
+    wait $FRONTEND_PID 2>/dev/null || true
+  fi
+
+  # Clean up any remaining processes on our ports
+  pkill -f "puma.*html2rss-web" 2>/dev/null || true
+  pkill -f "vite.*4001" 2>/dev/null || true
+
+  echo "✅ Development servers stopped"
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+# Prevent silent failures from port conflicts
+if port_in_use 4000; then
+  echo "❌ Port 4000 is already in use. Run: \`pkill -f 'puma.*html2rss-web'\`"
+  exit 1
+fi
+
+# Start Ruby server
+bundle exec puma -p 4000 -C config/puma.rb &
+RUBY_PID=$!
+
+# Verify Ruby server started successfully (allow slower boots in containers)
+RUBY_STARTUP_TIMEOUT=${RUBY_STARTUP_TIMEOUT:-30}
+ruby_started=false
+for _ in $(seq 1 "$RUBY_STARTUP_TIMEOUT"); do
+  if ! kill -0 $RUBY_PID 2>/dev/null; then
+    echo "❌ Ruby server failed to start"
+    exit 1
+  fi
+
+  if port_in_use 4000; then
+    ruby_started=true
+    break
+  fi
+
+  sleep 1
+done
+
+if [ "$ruby_started" != "true" ]; then
+  echo "❌ Ruby server did not start listening on port 4000 within ${RUBY_STARTUP_TIMEOUT}s"
+  kill $RUBY_PID 2>/dev/null || true
+  exit 1
+fi
+
+# Start frontend dev server
+cd frontend
+npm run dev &
+FRONTEND_PID=$!
+
+# Verify frontend server started
+sleep 3
+if ! kill -0 $FRONTEND_PID 2>/dev/null; then
+  echo "❌ Frontend dev server failed to start"
+  kill $RUBY_PID 2>/dev/null || true
+  exit 1
+fi
+
+echo "✅ Development environment ready at http://localhost:4001"
+wait $RUBY_PID $FRONTEND_PID
