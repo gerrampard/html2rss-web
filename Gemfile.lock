@@ -1,7 +1,7 @@
 GIT
   remote: https://github.com/html2rss/html2rss
   revision: e0dca5bf74b17c1e2a0618fc0a4af27c16da1883
-  branch: main
+  branch: master
   specs:
     html2rss (0.17.0)
       addressable (~> 2.7)
@@ -530,4 +530,4 @@ CHECKSUMS
   zlib (3.2.3) sha256=5bd316698b32f31a64ab910a8b6c282442ca1626a81bbd6a1674e8522e319c20
 
 BUNDLED WITH
-   2.6.6
+  4.0.8
