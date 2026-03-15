@@ -1,5 +1,16 @@
-# Stage 1: Build
-FROM ruby:4.0.1-alpine3.23 AS builder
+ARG RUBY_BASE_IMAGE=ruby:4.0.1-alpine3.23
+
+# Stage 1: Frontend Build
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Ruby Build
+FROM ${RUBY_BASE_IMAGE} AS builder
 
 LABEL maintainer="Gil Desmarais <html2rss-web-docker@desmarais.de>"
 
@@ -22,21 +33,22 @@ RUN apk add --no-cache \
   && bundle install --retry=5 --jobs=$(nproc) \
   && bundle binstubs bundler html2rss
 
-# Stage 2: Runtime
-FROM ruby:4.0.1-alpine3.23
+# Stage 3: Runtime
+FROM ${RUBY_BASE_IMAGE}
 
 LABEL maintainer="Gil Desmarais <html2rss-web-docker@desmarais.de>"
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
-ENV PORT=3000 \
-    RACK_ENV=production \
-    RUBY_YJIT_ENABLE=1
+ENV PORT=4000 \
+  RACK_ENV=production \
+  RUBY_YJIT_ENABLE=1
 
 EXPOSE $PORT
 
 HEALTHCHECK --interval=30m --timeout=60s --start-period=5s \
-  CMD curl -f http://${HEALTH_CHECK_USERNAME}:${HEALTH_CHECK_PASSWORD}@localhost:${PORT}/health_check.txt || exit 1
+  CMD TOKEN="${HEALTH_CHECK_TOKEN:-CHANGE_ME_HEALTH_CHECK_TOKEN}" && \
+    curl -f -H "Authorization: Bearer ${TOKEN}" http://localhost:${PORT}/api/v1/health || exit 1
 
 ARG USER=html2rss
 ARG UID=991
@@ -67,5 +79,6 @@ USER html2rss
 
 COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY --chown=$USER:$USER . /app
+COPY --from=frontend-builder --chown=$USER:$USER /app/public/frontend ./public/frontend
 
 CMD ["bundle", "exec", "puma", "-C", "./config/puma.rb"]
