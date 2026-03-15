@@ -42,7 +42,7 @@ describe('useFeedConversion', () => {
           data: { feed: mockResult },
         }),
         {
-          status: 200,
+          status: 201,
           headers: { 'Content-Type': 'application/json' },
         }
       )

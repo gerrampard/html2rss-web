@@ -21,7 +21,8 @@ describe('useFeedConversion contract', () => {
             feed_token: 'generated-token',
             public_url: '/api/v1/feeds/generated-token',
             json_public_url: '/api/v1/feeds/generated-token.json',
-          })
+          }),
+          { status: 201 }
         );
       })
     );

@@ -22,6 +22,8 @@ module Html2rss
               HealthRoutes.call(router)
               FeedRoutes.call(router)
               MetadataRoutes.call(router)
+
+              raise NotFoundError
             end
           end
         end

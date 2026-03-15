@@ -154,6 +154,22 @@ RSpec.describe 'api/v1', openapi: { example_mode: :none }, type: :request do
     end
   end
 
+  describe 'GET /api/v1/unknown', openapi: false do
+    it 'returns a JSON 404 instead of falling through to feed routes', :aggregate_failures do
+      get '/api/v1/unknown'
+
+      expect(last_response.status).to eq(404)
+      expect(last_response.content_type).to include('application/json')
+      expect(JSON.parse(last_response.body)).to include(
+        'success' => false,
+        'error' => include(
+          'message' => Html2rss::Web::NotFoundError::DEFAULT_MESSAGE,
+          'code' => Html2rss::Web::NotFoundError::CODE
+        )
+      )
+    end
+  end
+
   describe 'GET /api/v1/health', openapi: {
     summary: 'Authenticated health check',
     operation_id: 'getHealthStatus',
