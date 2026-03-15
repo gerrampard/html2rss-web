@@ -2,7 +2,7 @@
 http_interactions:
   - request:
       method: get
-      uri: https://github.com/html2rss/html2rss-web/commits/master
+      uri: https://github.com/html2rss/html2rss-web/commits/main
       body:
         encoding: US-ASCII
         string: ""

@@ -1,4 +1,4 @@
-![html2rss logo](https://github.com/html2rss/html2rss/raw/master/support/logo.png)
+![html2rss logo](https://github.com/html2rss/html2rss/raw/main/support/logo.png)
 
 # html2rss-web
 
@@ -72,22 +72,22 @@ For contributors and AI agents changing backend structure, follow the placement 
 
 ## Make Targets
 
-| Command              | Purpose                                                 |
-| -------------------- | ------------------------------------------------------- |
-| `make help`          | List available shortcuts.                               |
-| `make setup`         | Install Ruby and Node dependencies.                     |
-| `make dev`           | Run Ruby (port 4000) and frontend (port 4001) dev servers. |
-| `make dev-ruby`      | Start only the Ruby server.                             |
-| `make dev-frontend`  | Start only the frontend dev server (port 4001).         |
-| `make test`          | Run Ruby and frontend test suites.                      |
-| `make test-ruby`     | Run Ruby specs.                                         |
-| `make test-frontend` | Run frontend unit and contract tests.                   |
-| `make lint`          | Run all linters.                                        |
-| `make lintfix`       | Auto-fix lint warnings where possible.                  |
-| `make yard-verify-public-docs` | Enforce typed YARD docs for public methods in `app/`. |
-| `make openapi`       | Regenerate `docs/api/v1/openapi.yaml` from request specs. |
-| `make openapi-verify`| Regenerate + fail if OpenAPI file is stale.             |
-| `make clean`         | Remove build artefacts.                                 |
+| Command                        | Purpose                                                    |
+| ------------------------------ | ---------------------------------------------------------- |
+| `make help`                    | List available shortcuts.                                  |
+| `make setup`                   | Install Ruby and Node dependencies.                        |
+| `make dev`                     | Run Ruby (port 4000) and frontend (port 4001) dev servers. |
+| `make dev-ruby`                | Start only the Ruby server.                                |
+| `make dev-frontend`            | Start only the frontend dev server (port 4001).            |
+| `make test`                    | Run Ruby and frontend test suites.                         |
+| `make test-ruby`               | Run Ruby specs.                                            |
+| `make test-frontend`           | Run frontend unit and contract tests.                      |
+| `make lint`                    | Run all linters.                                           |
+| `make lintfix`                 | Auto-fix lint warnings where possible.                     |
+| `make yard-verify-public-docs` | Enforce typed YARD docs for public methods in `app/`.      |
+| `make openapi`                 | Regenerate `docs/api/v1/openapi.yaml` from request specs.  |
+| `make openapi-verify`          | Regenerate + fail if OpenAPI file is stale.                |
+| `make clean`                   | Remove build artefacts.                                    |
 
 ## OpenAPI Contract
 
@@ -98,12 +98,12 @@ The OpenAPI file is generated from Ruby request specs only.
 
 ## Frontend npm Scripts (inside Dev Container)
 
-| Command                 | Purpose                                       |
-| ----------------------- | --------------------------------------------- |
-| `npm run dev`           | Vite dev server with hot reload (port 4001).  |
-| `npm run build`         | Build static assets into `public/frontend`.   |
-| `npm run test:run`      | Unit tests (Vitest).                          |
-| `npm run test:contract` | Contract tests with MSW.                      |
+| Command                 | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `npm run dev`           | Vite dev server with hot reload (port 4001). |
+| `npm run build`         | Build static assets into `public/frontend`.  |
+| `npm run test:run`      | Unit tests (Vitest).                         |
+| `npm run test:contract` | Contract tests with MSW.                     |
 
 ## Testing Strategy
 

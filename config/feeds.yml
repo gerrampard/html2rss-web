@@ -26,8 +26,8 @@ feeds:
   # your custom feeds go here:
   example:
     channel:
-      url: https://github.com/html2rss/html2rss-web/commits/master
-      title: Latest commits on html2rss-web's master branch.
+      url: https://github.com/html2rss/html2rss-web/commits/main
+      title: Latest commits on html2rss-web's main branch.
       ttl: 120
     selectors:
       items:
