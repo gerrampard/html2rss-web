@@ -39,7 +39,6 @@
 # Ignore frontend build output and tooling caches
 /frontend/dist/
 /frontend/node_modules/
-/public/frontend
 /frontend/playwright-report/
 /frontend/test-results/
 

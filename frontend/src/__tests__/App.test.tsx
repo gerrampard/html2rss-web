@@ -53,7 +53,7 @@ describe('App', () => {
         api: {
           name: 'html2rss-web API',
           description: 'RESTful API for converting websites to RSS feeds',
-          openapi_url: 'http://example.test/api/v1/openapi.yaml',
+          openapi_url: 'http://example.test/openapi.yaml',
         },
         instance: {
           feed_creation: {
@@ -272,13 +272,13 @@ describe('App', () => {
     });
   });
 
-  it('builds a bookmarklet that returns to the current frontend entry', () => {
-    window.history.replaceState({}, '', 'http://localhost:3000/frontend/index.html');
+  it('builds a bookmarklet that returns to the root app entry', () => {
+    window.history.replaceState({}, '', 'http://localhost:3000/');
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'More' }));
     const bookmarklet = screen.getByRole('link', { name: 'Bookmarklet' });
-    expect(bookmarklet.getAttribute('href')).toContain('/frontend/index.html?url=');
+    expect(bookmarklet.getAttribute('href')).toContain('/?url=');
     expect(bookmarklet.getAttribute('href')).not.toContain('%27+encodeURIComponent');
   });
 });

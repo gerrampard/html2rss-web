@@ -20,7 +20,7 @@ html2rss-web converts arbitrary websites into RSS 2.0 feeds with a slim Ruby bac
 ## Architecture
 
 - **Backend:** Ruby + Roda, backed by the `html2rss` gem for extraction.
-- **Frontend:** Preact app built with Vite into `public/frontend`.
+- **Frontend:** Preact app built with Vite into `frontend/dist` and served at `/`.
 - **Distribution:** Docker Compose by default; other deployments require manual wiring.
 - [Project notes](docs/README.md)
 
@@ -85,7 +85,7 @@ For contributors and AI agents changing backend structure, follow the rules in [
 | `make lint`                    | Run all linters.                                           |
 | `make lintfix`                 | Auto-fix lint warnings where possible.                     |
 | `make yard-verify-public-docs` | Enforce typed YARD docs for public methods in `app/`.      |
-| `make openapi`                 | Regenerate `docs/api/v1/openapi.yaml` from request specs.  |
+| `make openapi`                 | Regenerate `public/openapi.yaml` from request specs.       |
 | `make openapi-verify`          | Regenerate + fail if OpenAPI file is stale.                |
 | `make clean`                   | Remove build artefacts.                                    |
 
@@ -101,7 +101,7 @@ The OpenAPI file is generated from Ruby request specs only.
 | Command                 | Purpose                                      |
 | ----------------------- | -------------------------------------------- |
 | `npm run dev`           | Vite dev server with hot reload (port 4001). |
-| `npm run build`         | Build static assets into `public/frontend`.  |
+| `npm run build`         | Build static assets into `frontend/dist/`.   |
 | `npm run test:run`      | Unit tests (Vitest).                         |
 | `npm run test:contract` | Contract tests with MSW.                     |
 
