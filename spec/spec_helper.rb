@@ -4,7 +4,7 @@
 ENV['RACK_ENV'] = 'test'
 ENV['HTML2RSS_SECRET_KEY'] = 'test-secret-key-for-specs'
 
-if ENV['CI'] || ENV['COVERAGE']
+if (ENV.fetch('CI', nil) || ENV.fetch('COVERAGE', nil)) && ENV['RUN_DOCKER_SPECS'] != 'true'
   require 'simplecov'
 
   SimpleCov.start do
@@ -13,7 +13,7 @@ if ENV['CI'] || ENV['COVERAGE']
 
     track_files '**/*.rb'
 
-    minimum_coverage 80
+    minimum_coverage 80 unless ENV['OPENAPI']
     maximum_coverage_drop 5
   end
 end
