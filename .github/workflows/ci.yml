@@ -146,7 +146,7 @@ jobs:
         run: bundle exec rake
 
   docker-publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - docker-test
     runs-on: ubuntu-latest
@@ -154,7 +154,7 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE_NAME: gilcreator/html2rss-web
+      IMAGE_NAME: html2rss/web
       TAG_SHA: ${{ github.sha }}
     steps:
       - name: Checkout code
@@ -212,8 +212,8 @@ jobs:
           context: .
           push: true
           tags: |
-            gilcreator/html2rss-web:latest
-            gilcreator/html2rss-web:${{ github.sha }}
+            html2rss/web:latest
+            html2rss/web:${{ github.sha }}
             ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=local,src=/tmp/.buildx-cache

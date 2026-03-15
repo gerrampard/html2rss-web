@@ -46,9 +46,10 @@ desc 'Build and run docker image/container, and send requests to it'
 task :test do
   current_dir = ENV.fetch('GITHUB_WORKSPACE', __dir__)
   smoke_auto_source_enabled = ENV.fetch('SMOKE_AUTO_SOURCE_ENABLED', 'false')
+  image_name = 'html2rss/web'
 
   Output.describe 'Building and running'
-  sh 'docker build -t gilcreator/html2rss-web -f Dockerfile .'
+  sh "docker build -t #{image_name} -f Dockerfile ."
   sh ['docker run',
       '-d',
       '-p 4000:4000',
@@ -57,7 +58,7 @@ task :test do
       "--env AUTO_SOURCE_ENABLED=#{smoke_auto_source_enabled}",
       "--mount type=bind,source=#{current_dir}/config,target=/app/config",
       '--name html2rss-web-test',
-      'gilcreator/html2rss-web'].join(' ')
+      image_name].join(' ')
 
   Output.wait 10, message: 'Waiting for container to start:'
 

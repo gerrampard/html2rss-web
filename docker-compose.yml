@@ -3,7 +3,7 @@
 
 services:
   html2rss-web:
-    image: gilcreator/html2rss-web
+    image: html2rss/web
     restart: unless-stopped
     ports:
       - "127.0.0.1:4000:4000"
