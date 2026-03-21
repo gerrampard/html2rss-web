@@ -152,16 +152,20 @@ export function CreateFeedPanel({
                 role="status"
                 aria-label="Included feeds"
               >
+                <p class="ui-eyebrow">Included feeds</p>
                 <div class="notice__title">Try a working included feed</div>
-                <p>Start with one of the embedded configs from this instance:</p>
-                {featuredFeeds.map((feed) => (
-                  <p key={feed.path}>
-                    <a href={feed.path}>{feed.title}</a>
-                    {' - '}
-                    {feed.description}
-                  </p>
-                ))}
-                <p>
+                <p class="notice__intro">Start with a ready-made feed from this instance.</p>
+                <div class="featured-feed-list" role="list" aria-label="Featured feeds">
+                  {featuredFeeds.map((feed) => (
+                    <div key={feed.path} class="featured-feed-item" role="listitem">
+                      <a href={feed.path} class="featured-feed-item__link" aria-label={feed.title}>
+                        <span class="featured-feed-item__title">{feed.title}</span>
+                        <span class="featured-feed-item__description">{feed.description}</span>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+                <p class="notice__meta">
                   <a
                     href="https://html2rss.github.io/web-application/how-to/use-included-configs/"
                     target="_blank"
@@ -255,6 +259,14 @@ export function UtilityStrip({
   onClearToken,
 }: UtilityStripProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const includedFeedsHref = (() => {
+    const directoryUrl = new URL('https://html2rss.github.io/feed-directory/');
+    if (typeof window === 'undefined') return directoryUrl.toString();
+
+    const instanceUrl = new URL('/', window.location.origin);
+    directoryUrl.hash = `!url=${encodeURIComponent(instanceUrl.toString())}`;
+    return directoryUrl.toString();
+  })();
 
   if (hidden) return null;
 
@@ -270,12 +282,7 @@ export function UtilityStrip({
       </button>
       {isOpen && (
         <div class="utility-strip__items">
-          <a
-            href="https://html2rss.github.io/web-application/how-to/use-included-configs/"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="utility-link"
-          >
+          <a href={includedFeedsHref} target="_blank" rel="noopener noreferrer" class="utility-link">
             Try included feeds
           </a>
           <Bookmarklet />
