@@ -18,7 +18,7 @@ describe('App contract', () => {
       http.post('/api/v1/feeds', async ({ request }) => {
         const body = (await request.json()) as { url: string; strategy: string };
 
-        expect(body).toEqual({ url: 'https://example.com/articles', strategy: 'ssrf_filter' });
+        expect(body).toEqual({ url: 'https://example.com/articles', strategy: 'browserless' });
         expect(request.headers.get('authorization')).toBe(`Bearer ${token}`);
 
         return HttpResponse.json(
@@ -35,7 +35,14 @@ describe('App contract', () => {
 
         return HttpResponse.json(
           {
-            items: [{ title: 'Contract Item' }],
+            items: [
+              {
+                title: 'Contract Item',
+                content_text: 'Contract preview excerpt.',
+                url: 'https://example.com/contract-item',
+                date_published: '2024-01-01T00:00:00Z',
+              },
+            ],
           },
           {
             headers: { 'content-type': 'application/feed+json' },
@@ -47,6 +54,9 @@ describe('App contract', () => {
     render(<App />);
 
     await screen.findByLabelText('Page URL');
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toHaveValue('browserless');
+    });
 
     const urlInput = screen.getByLabelText('Page URL') as HTMLInputElement;
     fireEvent.input(urlInput, { target: { value: 'https://example.com/articles' } });
@@ -89,6 +99,7 @@ describe('App contract', () => {
                 enabled: true,
                 access_token_required: true,
               },
+              featured_feeds: [],
             },
           },
         });
@@ -135,6 +146,9 @@ describe('App contract', () => {
     render(<App />);
 
     await screen.findByLabelText('Page URL');
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toHaveValue('browserless');
+    });
 
     fireEvent.input(screen.getByLabelText('Page URL'), {
       target: { value: 'https://example.com/articles' },
