@@ -4,6 +4,7 @@ require 'spec_helper'
 require 'rack/mock'
 
 require_relative '../../../app/web/request/request_context'
+require_relative '../../../app/web/security/log_sanitizer'
 require_relative '../../../app/web/request/request_context_middleware'
 
 RSpec.describe Html2rss::Web::RequestContextMiddleware do
@@ -17,6 +18,11 @@ RSpec.describe Html2rss::Web::RequestContextMiddleware do
     expect(response['X-Request-Id']).not_to be_empty
   end
 
+  it 'redacts feed tokens from request context paths' do
+    response = Rack::MockRequest.new(redaction_app).get('/api/v1/feeds/sensitive-token-value.json')
+    expect(response.body).to eq('/api/v1/feeds/[REDACTED].json')
+  end
+
   private
 
   # @return [Html2rss::Web::RequestContextMiddleware]
@@ -24,6 +30,15 @@ RSpec.describe Html2rss::Web::RequestContextMiddleware do
     app = lambda do |_env|
       context = Html2rss::Web::RequestContext.current
       [200, { 'Content-Type' => 'text/plain' }, ["#{context.route_group}:#{context.http_method}"]]
+    end
+    described_class.new(app)
+  end
+
+  # @return [Html2rss::Web::RequestContextMiddleware]
+  def redaction_app
+    app = lambda do |_env|
+      context = Html2rss::Web::RequestContext.current
+      [200, { 'Content-Type' => 'text/plain' }, [context.path]]
     end
     described_class.new(app)
   end

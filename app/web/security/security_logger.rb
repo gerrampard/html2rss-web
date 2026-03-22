@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
-require 'logger'
-require 'json'
 require 'digest'
-require 'time'
 module Html2rss
   module Web
     ##
@@ -11,16 +8,10 @@ module Html2rss
     # Provides structured logging for security events to stdout
     module SecurityLogger
       class << self
-        # Initialize logger to stdout with structured JSON output
-        # @return [Logger]
-        def logger
-          Thread.current[:security_logger] ||= create_logger
-        end
-
-        # Reset logger (for testing)
+        # Reset shared logger state for tests.
         # @return [void]
         def reset_logger!
-          Thread.current[:security_logger] = nil
+          AppLogger.reset_logger!
         end
 
         ##
@@ -111,12 +102,13 @@ module Html2rss
         # Log configuration validation failure
         # @param component [String] component that failed validation
         # @param details [String] validation failure details
+        # @param severity [Symbol]
         # @return [void]
-        def log_config_validation_failure(component, details)
+        def log_config_validation_failure(component, details, severity: :error)
           log_event('config_validation_failure', {
                       component: component,
                       details: details
-                    }, severity: :error)
+                    }, severity: severity)
         end
 
         # Log lifecycle events for in-memory config/cache snapshots
@@ -134,32 +126,18 @@ module Html2rss
 
         private
 
-        def create_logger
-          Logger.new($stdout).tap do |log|
-            log.formatter = proc do |severity, datetime, _progname, msg|
-              "#{{
-                timestamp: datetime.iso8601,
-                level: severity,
-                service: 'html2rss-web',
-                **JSON.parse(msg, symbolize_names: true)
-              }.to_json}\n"
-            end
-          end
-        end
-
         ##
         # Log a security event
         # @param event_type [String] type of security event
         # @param data [Hash] event data
         def log_event(event_type, data, severity: :warn)
-          context_data = RequestContext.current_h
-          payload = {
-            security_event: event_type,
-            **context_data,
-            **data
-          }.to_json
-
-          logger.public_send(severity, payload)
+          LogEvent.emit(
+            level: severity,
+            payload: {
+              security_event: event_type,
+              details: data
+            }
+          )
         rescue StandardError => error
           handle_logging_error(error, event_type, data)
         end
@@ -170,8 +148,9 @@ module Html2rss
         # @param event_type [String] type of security event
         # @param data [Hash] event data
         def handle_logging_error(error, event_type, data)
-          Kernel.warn("Security logging error: #{error.message}")
-          Kernel.warn("Security event: #{event_type} - #{data}")
+          sanitized_data = LogSanitizer.sanitize_details(data)
+          Kernel.warn("Structured logging fallback: #{error.class}: #{error.message}")
+          Kernel.warn("component=security_logger security_event=#{event_type} details=#{sanitized_data}")
         end
       end
     end
