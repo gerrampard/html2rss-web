@@ -124,7 +124,7 @@ export type RenderFeedByTokenErrors = {
      */
     403: string;
     /**
-     * returns non-cacheable json feed errors when service generation fails
+     * returns non-cacheable feed errors when service generation fails
      */
     500: string;
 };
@@ -177,7 +177,7 @@ export type GetHealthStatusError = GetHealthStatusErrors[keyof GetHealthStatusEr
 
 export type GetHealthStatusResponses = {
     /**
-     * returns health status when the configured environment token is valid
+     * returns health status when token is valid
      */
     200: {
         data: {

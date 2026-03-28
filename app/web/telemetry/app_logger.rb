@@ -35,7 +35,9 @@ module Html2rss
         # @param message [String]
         # @return [String]
         def format_entry(severity, datetime, _progname, message)
-          "#{base_payload(severity, datetime).merge(normalize_message(message)).to_json}\n"
+          payload = base_payload(severity, datetime).merge(normalize_message(message))
+          emit_to_sentry(payload)
+          "#{payload.to_json}\n"
         end
 
         # @param severity [String]
@@ -94,6 +96,22 @@ module Html2rss
           return value.to_f if value.match?(/\A-?\d+\.\d+\z/)
 
           value
+        end
+
+        # @param payload [Hash{Symbol=>Object}]
+        # @return [void]
+        def emit_to_sentry(payload)
+          return unless sentry_payload?(payload)
+
+          SentryLogs.emit(payload)
+        rescue StandardError
+          nil
+        end
+
+        # @param payload [Hash{Symbol=>Object}]
+        # @return [Boolean]
+        def sentry_payload?(payload)
+          payload.key?(:event_name) || payload.key?(:security_event)
         end
       end
     end
