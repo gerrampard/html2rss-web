@@ -1,19 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
-import { h } from 'preact';
 import { ResultDisplay } from '../components/ResultDisplay';
 
 describe('ResultDisplay', () => {
   const mockOnCreateAnother = vi.fn();
+  const mockOnRetryPreview = vi.fn();
   const mockResult = {
     feed: {
       id: 'test-id',
       name: 'Test Feed',
       url: 'https://example.com',
-      strategy: 'faraday',
       feed_token: 'test-feed-token',
       public_url: 'https://example.com/feed.xml',
       json_public_url: 'https://example.com/feed.json',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
     preview: {
       items: [
@@ -23,116 +24,136 @@ describe('ResultDisplay', () => {
           url: 'https://example.com/item-one',
           publishedLabel: 'Jan 1, 2024',
         },
-        {
-          title: '56 points by canpan 1 hour ago | hide | 18 comments',
-          excerpt: '',
-          publishedLabel: 'Jan 2, 2024',
-        },
-        {
-          title: 'Item Two',
-          excerpt: '',
-          url: 'https://example.com/item-two',
-          publishedLabel: 'Jan 3, 2024',
-        },
       ],
-      error: null,
       isLoading: false,
     },
-    retry: null,
+    workflowState: 'preview_ready' as const,
+    warnings: [],
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders the success state actions and richer preview cards', async () => {
-    render(<ResultDisplay result={mockResult} onCreateAnother={mockOnCreateAnother} />);
+  it('renders ready feed actions and preview cards', async () => {
+    const resultWithMultiplePreviewItems = {
+      ...mockResult,
+      preview: {
+        items: [
+          {
+            title: 'Item One',
+            excerpt: 'First preview item with markup.',
+            url: 'https://example.com/item-one',
+            publishedLabel: 'Jan 1, 2024',
+          },
+          {
+            title: 'Item Two',
+            excerpt: 'Second preview item with markup.',
+            url: 'https://example.com/item-two',
+            publishedLabel: 'Jan 2, 2024',
+          },
+          {
+            title: 'Item Three',
+            excerpt: 'Third preview item with markup.',
+            url: 'https://example.com/item-three',
+            publishedLabel: 'Jan 3, 2024',
+          },
+          {
+            title: 'Item Four',
+            excerpt: 'Fourth preview item with markup.',
+            url: 'https://example.com/item-four',
+            publishedLabel: 'Jan 4, 2024',
+          },
+        ],
+        isLoading: false,
+      },
+    };
 
-    expect(screen.getByText('Your feed is ready')).toBeInTheDocument();
-    expect(screen.getByText('Test Feed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy feed URL' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Subscribe in reader' })).toHaveAttribute(
-      'href',
-      'feed:https://example.com/feed.xml'
+    render(
+      <ResultDisplay
+        result={resultWithMultiplePreviewItems}
+        workflowState="result"
+        onCreateAnother={mockOnCreateAnother}
+        onRetryPreview={mockOnRetryPreview}
+      />
     );
-    expect(screen.getByRole('link', { name: 'Open feed' })).toBeInTheDocument();
+
+    expect(document.querySelector('.result-shell')).toHaveAttribute('data-state', 'result');
+    expect(screen.getByText('Feed ready')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open feed' })).toHaveClass('btn--primary');
     expect(screen.getByRole('link', { name: 'Open JSON Feed' })).toHaveAttribute(
       'href',
       'https://example.com/feed.json'
     );
     await waitFor(() => {
       expect(screen.getByText('Item One')).toBeInTheDocument();
-      expect(screen.getByText('First preview item with markup.')).toBeInTheDocument();
-      expect(screen.getAllByText('Open original')).toHaveLength(2);
-      expect(screen.getByText(/points by canpan/i)).toBeInTheDocument();
-      expect(screen.getByText('Item Two')).toBeInTheDocument();
+      expect(screen.getByText('Item Four')).toBeInTheDocument();
       expect(screen.getByText('Latest items from this feed')).toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: /show all .* items/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show fewer items' })).not.toBeInTheDocument();
   });
 
-  it('surfaces preview failures as a result-state message', async () => {
+  it('renders preview loading as frontend-owned progress', () => {
     render(
       <ResultDisplay
         result={{
           ...mockResult,
-          preview: { items: [], error: 'Preview unavailable right now.', isLoading: false },
+          workflowState: 'preview_loading',
+          preview: { items: [], isLoading: true },
         }}
+        workflowState="result"
         onCreateAnother={mockOnCreateAnother}
+        onRetryPreview={mockOnRetryPreview}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Preview unavailable right now.')).toBeInTheDocument();
-      expect(screen.getByText('Latest items from this feed')).toBeInTheDocument();
-    });
+    expect(screen.getByText('Checking preview')).toBeInTheDocument();
+    expect(screen.getByText('Checking preview...')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open feed' })).not.toBeInTheDocument();
   });
 
-  it('keeps the result state visible while preview is still loading', async () => {
-    render(
-      <ResultDisplay
-        result={{ ...mockResult, preview: { items: [], error: null, isLoading: true } }}
-        onCreateAnother={mockOnCreateAnother}
-      />
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Your feed is ready')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Open feed' })).toBeInTheDocument();
-      expect(screen.getByText('Loading preview…')).toBeInTheDocument();
-    });
-  });
-
-  it('shows an automatic retry notice when fallback strategy succeeded', async () => {
+  it('lets retryable preview failures retry preview only', () => {
     render(
       <ResultDisplay
         result={{
           ...mockResult,
-          retry: { automatic: true, from: 'faraday', to: 'browserless' },
+          workflowState: 'preview_failed',
+          preview: { items: [], isLoading: false },
+          warnings: [
+            {
+              code: 'PREVIEW_HTTP_503',
+              message: 'Preview content is partially degraded right now.',
+              retryable: true,
+              nextAction: 'retry',
+            },
+          ],
         }}
+        workflowState="result"
         onCreateAnother={mockOnCreateAnother}
+        onRetryPreview={mockOnRetryPreview}
       />
     );
 
-    await waitFor(() => {
-      expect(
-        screen.getByText('Retried automatically with browserless after faraday could not finish the page.')
-      ).toBeInTheDocument();
-    });
+    expect(screen.getByText('Feed link created')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check preview again' }));
+    expect(mockOnRetryPreview).toHaveBeenCalled();
   });
 
-  it('calls onCreateAnother when the reset button is clicked', () => {
-    render(<ResultDisplay result={mockResult} onCreateAnother={mockOnCreateAnother} />);
+  it('calls onCreateAnother and copies feed URL', async () => {
+    render(
+      <ResultDisplay
+        result={mockResult}
+        workflowState="result"
+        onCreateAnother={mockOnCreateAnother}
+        onRetryPreview={mockOnRetryPreview}
+      />
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Create another feed' }));
-
     expect(mockOnCreateAnother).toHaveBeenCalled();
-  });
-
-  it('copies feed URL to clipboard when copy button is clicked', async () => {
-    render(<ResultDisplay result={mockResult} onCreateAnother={mockOnCreateAnother} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy feed URL' }));
-
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/feed.xml');
     });

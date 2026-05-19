@@ -94,9 +94,9 @@ module Html2rss
 
             # @return [void]
             def verify_configuration!
-              LocalConfig.yaml
+              LocalConfig.load_snapshot
             rescue StandardError
-              raise Html2rss::Web::InternalServerError, Contract::MESSAGES[:health_check_failed]
+              raise Html2rss::Web::HealthCheckFailedError
             end
           end
         end

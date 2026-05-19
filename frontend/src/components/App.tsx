@@ -1,24 +1,62 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { JSX } from 'preact';
 import { ResultDisplay } from './ResultDisplay';
-import { CreateFeedPanel, UtilityStrip, type Strategy } from './AppPanels';
+import { CreateFeedPanel, UtilityStrip } from './AppPanels';
 import { useAccessToken } from '../hooks/useAccessToken';
 import { useApiMetadata } from '../hooks/useApiMetadata';
 import { useFeedConversion } from '../hooks/useFeedConversion';
-import { useStrategies } from '../hooks/useStrategies';
+import { useAppRoute } from '../routes/appRoute';
+import { clearFeedDraftState, loadFeedDraftState, saveFeedDraftState } from '../utils/feedWorkflowStorage';
 import { normalizeUserUrl } from '../utils/url';
+import type { WorkflowState } from './AppPanels';
+import type { FeedCreationError } from '../api/contracts';
 
 const EMPTY_FEED_ERRORS = { url: '', form: '' };
 const DEFAULT_FEED_CREATION = { enabled: true, access_token_required: true };
-const preferredStrategy = (strategies: { id: string }[]) =>
-  strategies.find((strategy) => strategy.id === 'faraday')?.id ?? strategies[0]?.id;
 
-interface ConversionErrorWithMeta extends Error {
-  manualRetryStrategy?: string;
+function deriveWorkflowState({
+  conversionError,
+  feedFieldErrors,
+  isConverting,
+  routeKind,
+  tokenError,
+  tokenStateError,
+  metadataError,
+}: {
+  conversionError?: FeedCreationError;
+  feedFieldErrors: { url: string; form: string };
+  isConverting: boolean;
+  routeKind: string;
+  tokenError: string;
+  tokenStateError?: string;
+  metadataError?: string;
+}): WorkflowState {
+  if (tokenStateError || metadataError) return 'error';
+  if (routeKind === 'token' || tokenError) return 'token_prompt';
+  if (conversionError?.nextAction === 'enter_token' || conversionError?.kind === 'auth')
+    return 'token_prompt';
+  if (routeKind === 'result') return 'result';
+  if (feedFieldErrors.url || feedFieldErrors.form || conversionError?.nextAction === 'correct_input') {
+    return 'error';
+  }
+  if (isConverting) return 'submitting';
+
+  if (conversionError) return 'error';
+
+  return 'create';
 }
 
-function BrandLockup() {
+function BrandLockup({ onNavigateHome }: { onNavigateHome: () => void }) {
   return (
-    <a class="brand-lockup" href="/" aria-label="html2rss">
+    <a
+      class="brand-lockup"
+      href="/#/create"
+      aria-label="html2rss"
+      onClick={(event) => {
+        event.preventDefault();
+        onNavigateHome();
+      }}
+    >
       <span class="brand-lockup__mark" aria-hidden="true">
         <span />
         <span />
@@ -30,6 +68,7 @@ function BrandLockup() {
 }
 
 export function App() {
+  const { route, navigate } = useAppRoute();
   const {
     token,
     hasToken,
@@ -46,97 +85,62 @@ export function App() {
     convertFeed,
     clearError,
     clearResult,
+    retryPreviewFetch,
   } = useFeedConversion();
-  const { strategies, isLoading: strategiesLoading, error: strategiesError } = useStrategies();
 
-  const [feedFormData, setFeedFormData] = useState({ url: '', strategy: '' });
+  const [feedFormData, setFeedFormData] = useState(() => loadFeedDraftState() ?? { url: '' });
   const [feedFieldErrors, setFeedFieldErrors] = useState(EMPTY_FEED_ERRORS);
-  const [showTokenPrompt, setShowTokenPrompt] = useState(false);
   const [tokenDraft, setTokenDraft] = useState('');
   const [tokenError, setTokenError] = useState('');
-  const [manualRetryStrategy, setManualRetryStrategy] = useState('');
   const [focusCreateComposerKey, setFocusCreateComposerKey] = useState(0);
-  const autoSubmitUrlRef = useRef<string | null>(null);
-  const hasAutoSubmittedRef = useRef(false);
-  const selectedStrategy = feedFormData.strategy || preferredStrategy(strategies) || '';
+  const autoSubmitUrlReference = useRef<string | undefined>(route.prefillUrl);
+  const hasAutoSubmittedReference = useRef(false);
+  const isTokenRoute = route.kind === 'token';
+  const activeResult =
+    route.kind === 'result' && result?.feed.feed_token === route.feedToken ? result : undefined;
+  let visibleRouteKind = 'create';
+  if (activeResult) {
+    visibleRouteKind = 'result';
+  } else if (isTokenRoute) {
+    visibleRouteKind = 'token';
+  }
+  const workflowState: WorkflowState = deriveWorkflowState({
+    conversionError,
+    feedFieldErrors,
+    isConverting,
+    routeKind: visibleRouteKind,
+    tokenError,
+    tokenStateError,
+    metadataError,
+  });
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const urlParam = new URLSearchParams(window.location.search).get('url');
-    if (!urlParam) return;
-    autoSubmitUrlRef.current = urlParam;
+    if (!route.prefillUrl) return;
+    autoSubmitUrlReference.current = route.prefillUrl;
     if (feedFormData.url) return;
 
-    setFeedFormData((prev) => ({ ...prev, url: urlParam }));
-  }, [feedFormData.url]);
-
-  useEffect(() => {
-    const nextStrategy = preferredStrategy(strategies);
-    if (!nextStrategy) return;
-
-    const hasCurrentStrategy = strategies.some((strategy) => strategy.id === feedFormData.strategy);
-    if (!hasCurrentStrategy) setFeedFormData((prev) => ({ ...prev, strategy: nextStrategy }));
-  }, [strategies, feedFormData.strategy]);
+    setFeedFormData((previous) => ({ ...previous, url: route.prefillUrl ?? previous.url }));
+  }, [feedFormData.url, route.prefillUrl]);
 
   const feedCreation = metadata?.instance.feed_creation ?? DEFAULT_FEED_CREATION;
   const featuredFeeds = metadata?.instance.featured_feeds ?? [];
-  const submitDisabled = isConverting || strategiesLoading || !feedCreation.enabled || showTokenPrompt;
+  const submitDisabled = isConverting || !feedCreation.enabled || isTokenRoute;
 
-  const setFeedField = (key: 'url' | 'strategy', value: string) => {
-    setFeedFormData((prev) => ({ ...prev, [key]: value }));
-    setFeedFieldErrors((prev) => ({
-      ...prev,
-      url: key === 'url' ? '' : prev.url,
-      form: '',
-    }));
-    setManualRetryStrategy('');
+  const setFeedField = (key: 'url', value: string) => {
+    setFeedFormData((previous) => {
+      const next = { ...previous, [key]: value };
+      if (next.url.trim()) {
+        saveFeedDraftState(next);
+      } else {
+        clearFeedDraftState();
+      }
+      return next;
+    });
+    setFeedFieldErrors((previous) => ({ ...previous, url: '', form: '' }));
     clearError();
   };
 
-  const strategyHint = (strategy: Strategy) => {
-    if (strategy.id === 'faraday') return 'Start here for most pages.';
-    if (strategy.id === 'browserless') return 'Use this if the page loads content with JavaScript.';
-    return strategy.name;
-  };
-
-  const isAccessTokenError = (message: string) => {
-    const normalized = message.toLowerCase();
-    const mentionsAuthToken =
-      normalized.includes('access token') ||
-      normalized.includes('token') ||
-      normalized.includes('authentication') ||
-      normalized.includes('bearer');
-
-    return (
-      normalized.includes('unauthorized') ||
-      normalized.includes('invalid token') ||
-      normalized.includes('token rejected') ||
-      normalized.includes('authentication') ||
-      (normalized.includes('forbidden') && mentionsAuthToken)
-    );
-  };
-
-  const isActionableStrategySwitch = (message: string, currentStrategy: string, retryStrategy: string) => {
-    if (currentStrategy !== 'faraday' || retryStrategy !== 'browserless') return false;
-
-    const normalized = message.toLowerCase();
-    return !(
-      normalized.includes('unauthorized') ||
-      normalized.includes('forbidden') ||
-      normalized.includes('not allowed') ||
-      normalized.includes('disabled') ||
-      normalized.includes('access token') ||
-      normalized.includes('token') ||
-      normalized.includes('authentication') ||
-      normalized.includes('bad request') ||
-      normalized.includes('url') ||
-      normalized.includes('unsupported strategy')
-    );
-  };
-
-  const attemptFeedCreation = async (accessToken: string, strategyOverride?: string) => {
-    const strategy = strategyOverride || selectedStrategy;
+  const attemptFeedCreation = async (accessToken: string) => {
     const normalizedUrl = normalizeUserUrl(feedFormData.url);
 
     if (!normalizedUrl) {
@@ -144,56 +148,48 @@ export function App() {
       return false;
     }
 
-    if (!strategy) {
-      setFeedFieldErrors({ ...EMPTY_FEED_ERRORS, form: 'Strategy is required' });
-      return false;
-    }
-
     if (!feedCreation.enabled) {
       setFeedFieldErrors({
         ...EMPTY_FEED_ERRORS,
-        form: 'Custom feed generation is disabled for this instance.',
+        form: 'Feed creation is disabled on this instance.',
       });
       return false;
     }
 
     if (feedCreation.access_token_required && !accessToken) {
-      setFeedFormData((prev) => ({ ...prev, url: normalizedUrl }));
+      setFeedFormData((previous) => ({ ...previous, url: normalizedUrl }));
       clearError();
-      setShowTokenPrompt(true);
       setTokenError('');
+      if (route.kind !== 'token') navigate({ kind: 'token', prefillUrl: normalizedUrl });
       return false;
     }
 
     try {
-      setFeedFormData((prev) => ({ ...prev, url: normalizedUrl }));
-      await convertFeed(normalizedUrl, strategy, accessToken);
-      setShowTokenPrompt(false);
+      setFeedFormData((previous) => ({ ...previous, url: normalizedUrl }));
+      const createdResult = await convertFeed(normalizedUrl, accessToken);
+      clearFeedDraftState();
+      navigate({ kind: 'result', feedToken: createdResult.feed.feed_token });
       setTokenError('');
-      setManualRetryStrategy('');
       return true;
     } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : 'Unable to start feed generation.';
-      const retryStrategy = (submitError as ConversionErrorWithMeta).manualRetryStrategy ?? '';
-      setManualRetryStrategy(
-        isActionableStrategySwitch(message, strategy, retryStrategy) ? retryStrategy : ''
-      );
+      const failure = submitError as FeedCreationError;
 
-      if (feedCreation.access_token_required && isAccessTokenError(message)) {
+      if (failure.kind === 'auth' || failure.nextAction === 'enter_token') {
         clearToken();
         clearError();
         setTokenDraft('');
-        setShowTokenPrompt(true);
+        if (route.kind !== 'token') navigate({ kind: 'token', prefillUrl: normalizedUrl });
         setTokenError('Access token was rejected. Paste a valid token to continue.');
         setFeedFieldErrors(EMPTY_FEED_ERRORS);
         return false;
       }
 
-      if (message.toLowerCase().includes('url')) {
-        setFeedFieldErrors({ ...EMPTY_FEED_ERRORS, url: message });
-      } else {
-        setFeedFieldErrors({ ...EMPTY_FEED_ERRORS, form: message });
+      if (failure.nextAction === 'correct_input') {
+        setFeedFieldErrors({ ...EMPTY_FEED_ERRORS, form: failure.message });
+        return false;
       }
+
+      setFeedFieldErrors({ ...EMPTY_FEED_ERRORS, form: failure.message });
       return false;
     }
   };
@@ -218,124 +214,131 @@ export function App() {
 
   const handleCreateAnother = () => {
     clearResult();
-    setManualRetryStrategy('');
     setFocusCreateComposerKey((current) => current + 1);
+    navigate({ kind: 'create', prefillUrl: feedFormData.url || undefined });
   };
 
-  const handleRetryWithStrategy = () => {
-    if (!manualRetryStrategy) return;
-
-    setFeedFormData((prev) => ({ ...prev, strategy: manualRetryStrategy }));
+  const handleRetryCreation = () => {
     setFeedFieldErrors(EMPTY_FEED_ERRORS);
     clearError();
-    void attemptFeedCreation(token ?? '', manualRetryStrategy);
+    void attemptFeedCreation(token ?? '');
   };
 
   useEffect(() => {
-    const autoSubmitUrl = autoSubmitUrlRef.current;
-    if (!autoSubmitUrl || hasAutoSubmittedRef.current) return;
-    if (strategiesLoading || metadataLoading || tokenLoading) return;
-    if (feedFormData.url !== autoSubmitUrl || !selectedStrategy) return;
+    const autoSubmitUrl = autoSubmitUrlReference.current;
+    if (!autoSubmitUrl || hasAutoSubmittedReference.current) return;
+    if (metadataLoading || tokenLoading) return;
+    if (feedFormData.url !== autoSubmitUrl) return;
 
     if (feedCreation.access_token_required && !token) {
-      hasAutoSubmittedRef.current = true;
-      setFeedFormData((prev) => ({ ...prev, url: normalizeUserUrl(autoSubmitUrl) }));
-      setShowTokenPrompt(true);
+      hasAutoSubmittedReference.current = true;
+      setFeedFormData((previous) => ({ ...previous, url: normalizeUserUrl(autoSubmitUrl) }));
       setTokenError('');
+      if (route.kind !== 'token') {
+        navigate({ kind: 'token', prefillUrl: normalizeUserUrl(autoSubmitUrl) });
+      }
       return;
     }
 
-    hasAutoSubmittedRef.current = true;
+    hasAutoSubmittedReference.current = true;
     setFeedFieldErrors(EMPTY_FEED_ERRORS);
     void attemptFeedCreation(token ?? '');
   }, [
     feedCreation.access_token_required,
     feedFormData.url,
     metadataLoading,
-    selectedStrategy,
-    strategiesLoading,
+    navigate,
+    route.kind,
     token,
     tokenLoading,
   ]);
 
+  let bodyContent: JSX.Element;
   if (metadataLoading || tokenLoading) {
-    return (
-      <section class="workspace-shell workspace-shell--centered workspace-shell--loading">
-        <BrandLockup />
-        <div class="ui-card ui-card--notice ui-card--roomy notice" data-state="loading" aria-live="polite">
-          <div class="notice__spinner" aria-hidden="true" />
-          <div>
-            <strong>Loading instance</strong>
-            <p>Reading feed-generation capabilities.</p>
-          </div>
+    bodyContent = (
+      <div class="ui-card ui-card--notice ui-card--roomy notice" data-state="loading" aria-live="polite">
+        <div class="notice__spinner" aria-hidden="true" />
+        <div>
+          <strong>Loading instance</strong>
+          <p>Reading feed-generation capabilities.</p>
         </div>
-      </section>
+      </div>
+    );
+  } else if (activeResult) {
+    bodyContent = (
+      <ResultDisplay
+        result={activeResult}
+        workflowState={workflowState}
+        onCreateAnother={handleCreateAnother}
+        onRetryPreview={retryPreviewFetch}
+      />
+    );
+  } else {
+    bodyContent = (
+      <CreateFeedPanel
+        focusComposerKey={focusCreateComposerKey}
+        workflowState={workflowState}
+        feedFormData={feedFormData}
+        feedFieldErrors={feedFieldErrors}
+        conversionError={conversionError}
+        errorKind={conversionError?.kind}
+        isConverting={isConverting}
+        submitDisabled={submitDisabled}
+        feedCreationEnabled={feedCreation.enabled}
+        featuredFeeds={featuredFeeds}
+        tokenDraft={tokenDraft}
+        tokenError={tokenError}
+        showTokenPrompt={isTokenRoute}
+        onFeedSubmit={handleFeedSubmit}
+        onFeedFieldChange={setFeedField}
+        onTokenDraftChange={(value) => {
+          setTokenDraft(value);
+          setTokenError('');
+          clearError();
+        }}
+        onSaveToken={handleSaveToken}
+        onCancelTokenPrompt={() => {
+          setTokenError('');
+          clearError();
+          navigate({ kind: 'create', prefillUrl: feedFormData.url || undefined });
+        }}
+        onRetryCreate={handleRetryCreation}
+      />
     );
   }
 
   return (
-    <section class="workspace-shell workspace-shell--centered">
-      <header class="workspace-hero">
-        <BrandLockup />
-      </header>
+    <>
+      <section class="workspace-shell workspace-shell--centered">
+        <header class="workspace-hero">
+          <BrandLockup onNavigateHome={() => navigate({ kind: 'create' })} />
+        </header>
 
-      {(metadataError || tokenStateError) && (
-        <section class="ui-card ui-card--notice ui-card--padded notice" data-tone="error" role="alert">
-          <div class="notice__title">Instance metadata unavailable</div>
-          <p>{metadataError ?? tokenStateError}</p>
-        </section>
-      )}
+        <div class="workspace-content">
+          {(metadataError || tokenStateError) && (
+            <section class="ui-card ui-card--notice ui-card--padded notice" data-tone="error" role="alert">
+              <div class="notice__title">Instance metadata unavailable</div>
+              <p>{metadataError ?? tokenStateError}</p>
+            </section>
+          )}
 
-      {result ? (
-        <ResultDisplay result={result} onCreateAnother={handleCreateAnother} />
-      ) : (
-        <>
-          <CreateFeedPanel
-            focusComposerKey={focusCreateComposerKey}
-            feedFormData={{ ...feedFormData, strategy: selectedStrategy }}
-            feedFieldErrors={feedFieldErrors}
-            conversionError={conversionError}
-            isConverting={isConverting}
-            submitDisabled={submitDisabled}
-            strategies={strategies}
-            strategiesLoading={strategiesLoading}
-            strategiesError={strategiesError}
-            feedCreationEnabled={feedCreation.enabled}
-            featuredFeeds={featuredFeeds}
-            accessTokenRequired={feedCreation.access_token_required}
-            hasAccessToken={hasToken}
-            tokenDraft={tokenDraft}
-            tokenError={tokenError}
-            showTokenPrompt={showTokenPrompt}
-            onFeedSubmit={handleFeedSubmit}
-            onFeedFieldChange={setFeedField}
-            onTokenDraftChange={(value) => {
-              setTokenDraft(value);
-              setTokenError('');
-              clearError();
-            }}
-            onSaveToken={handleSaveToken}
-            onCancelTokenPrompt={() => {
-              setShowTokenPrompt(false);
-              setTokenError('');
-              clearError();
-            }}
-            manualRetryStrategy={manualRetryStrategy}
-            onRetryWithStrategy={handleRetryWithStrategy}
-            strategyHint={strategyHint}
-          />
+          {bodyContent}
+        </div>
+      </section>
+
+      <footer class="app-footer" aria-label="Footer navigation">
+        <div class="app-footer__inner">
           <UtilityStrip
-            hidden={showTokenPrompt}
             hasAccessToken={hasToken}
-            openapiUrl={metadata?.api.openapi_url ?? null}
+            openapiUrl={metadata?.api.openapi_url}
             onClearToken={() => {
               clearToken();
-              setShowTokenPrompt(false);
               clearError();
+              navigate({ kind: 'create', prefillUrl: feedFormData.url || undefined });
             }}
           />
-        </>
-      )}
-    </section>
+        </div>
+      </footer>
+    </>
   );
 }

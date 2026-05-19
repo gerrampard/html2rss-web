@@ -12,13 +12,9 @@ module Html2rss
           # @param identifier [String]
           # @return [String] serialized feed body.
           def call(request:, target_kind:, identifier:)
-            feed_request = Request.call(request:, target_kind:, identifier:)
-            resolved_source = SourceResolver.call(feed_request)
-            result = Service.call(resolved_source)
-            normalized_identifier = feed_request.feed_name || identifier
+            feed_request, resolved_source, result = resolve_request(request:, target_kind:, identifier:)
             body = write_response(response: request.response, representation: feed_request.representation, result:)
-
-            emit_result(target_kind:, identifier: normalized_identifier, resolved_source:, result:)
+            emit_response_result(target_kind:, identifier:, feed_request:, resolved_source:, result:)
             body
           rescue StandardError => error
             emit_failure(target_kind:, identifier:, error:)
@@ -27,12 +23,45 @@ module Html2rss
 
           private
 
+          # @param request [Rack::Request]
+          # @param target_kind [Symbol]
+          # @param identifier [String]
+          # @return [Array<(Html2rss::Web::Feeds::Contracts::Request, Html2rss::Web::Feeds::Contracts::ResolvedSource, Html2rss::Web::Feeds::Contracts::RenderResult)>]
+          def resolve_request(request:, target_kind:, identifier:)
+            feed_request = Request.call(request:, target_kind:, identifier:)
+            resolved_source = SourceResolver.call(feed_request)
+            result = Service.call(resolved_source)
+            [feed_request, resolved_source, result]
+          end
+
+          # @param feed_request [Html2rss::Web::Feeds::Contracts::Request]
+          # @param identifier [String]
+          # @return [String]
+          def normalized_identifier(feed_request, identifier)
+            feed_request.feed_name || identifier
+          end
+
+          # @param target_kind [Symbol]
+          # @param identifier [String]
+          # @param feed_request [Html2rss::Web::Feeds::Contracts::Request]
+          # @param resolved_source [Html2rss::Web::Feeds::Contracts::ResolvedSource]
+          # @param result [Html2rss::Web::Feeds::Contracts::RenderResult]
+          # @return [void]
+          def emit_response_result(target_kind:, identifier:, feed_request:, resolved_source:, result:)
+            emit_result(
+              target_kind:,
+              identifier: normalized_identifier(feed_request, identifier),
+              resolved_source:,
+              result:
+            )
+          end
+
           # @param response [Rack::Response]
           # @param representation [Symbol]
           # @param result [Html2rss::Web::Feeds::Contracts::RenderResult]
           # @return [String]
           def write_response(response:, representation:, result:)
-            response.status = result.status == :error ? 500 : 200
+            response.status = status_for(result.status)
             response['Content-Type'] = FeedResponseFormat.content_type(representation)
             apply_cache_headers(response, result)
             ::Html2rss::Web::HttpCache.vary(response, 'Accept')
@@ -63,7 +92,8 @@ module Html2rss
           # @param result [Html2rss::Web::Feeds::Contracts::RenderResult]
           # @return [void]
           def emit_result(target_kind:, identifier:, resolved_source:, result:)
-            return emit_success(target_kind:, identifier:, resolved_source:) unless result.status == :error
+            return emit_success(target_kind:, identifier:, resolved_source:) if result.status == :ok
+            return emit_empty(target_kind:, identifier:, resolved_source:, result:) if result.status == :empty
 
             emit_failure(
               target_kind:,
@@ -80,12 +110,38 @@ module Html2rss
           # @return [void]
           def emit_success(target_kind:, identifier:, resolved_source:)
             details = {
-              strategy: resolved_source.generator_input[:strategy],
               url: resolved_source.generator_input.dig(:channel, :url)
             }
+            strategy = resolved_source.generator_input[:strategy]
+            details[:strategy] = strategy if strategy
             details[:feed_name] = identifier if target_kind == :static
 
             Observability.emit(event_name: 'feed.render', outcome: 'success', details:, level: :info)
+          end
+
+          # @param target_kind [Symbol]
+          # @param identifier [String]
+          # @param resolved_source [Html2rss::Web::Feeds::Contracts::ResolvedSource]
+          # @param result [Html2rss::Web::Feeds::Contracts::RenderResult]
+          # @return [void]
+          def emit_empty(target_kind:, identifier:, resolved_source:, result:)
+            details = {
+              url: resolved_source.generator_input.dig(:channel, :url),
+              reason: empty_reason_for(result)
+            }
+            strategy = resolved_source.generator_input[:strategy]
+            details[:strategy] = strategy if strategy
+            details[:feed_name] = identifier if target_kind == :static
+
+            Observability.emit(event_name: 'feed.render', outcome: 'failure', details:, level: :warn)
+          end
+
+          # @param result [Html2rss::Web::Feeds::Contracts::RenderResult]
+          # @return [String]
+          def empty_reason_for(result)
+            return 'content_extraction_empty' if result.error_kind == :extraction_empty
+
+            'feed_empty'
           end
 
           # @param target_kind [Symbol]
@@ -97,6 +153,15 @@ module Html2rss
             details[:feed_name] = identifier if target_kind == :static
 
             Observability.emit(event_name: 'feed.render', outcome: 'failure', details:, level: :warn)
+          end
+
+          # @param status [Symbol]
+          # @return [Integer]
+          def status_for(status)
+            return 200 if status == :ok
+            return 422 if status == :empty
+
+            500
           end
         end
       end

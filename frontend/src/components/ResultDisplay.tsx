@@ -1,28 +1,82 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { CreatedFeedResult } from '../api/contracts';
+import type { WorkflowState } from './AppPanels';
 import { DominantField } from './DominantField';
+import { ResultHero } from './ResultHero';
 
-interface ResultDisplayProps {
+interface ResultDisplayProperties {
   result: CreatedFeedResult;
+  workflowState: WorkflowState;
   onCreateAnother: () => void;
+  onRetryPreview: () => void;
 }
 
-export function ResultDisplay({ result, onCreateAnother }: ResultDisplayProps) {
+interface PreviewSectionProperties {
+  ariaLabel: string;
+  intro?: string;
+  children: ComponentChildren;
+}
+
+function PreviewSection({ ariaLabel, intro, children }: PreviewSectionProperties) {
+  return (
+    <section class="result-preview layout-rail-reading layout-stack" aria-label={ariaLabel}>
+      <div class="result-preview__header layout-stack layout-stack--tight">
+        <p class="result-preview__label ui-eyebrow">Preview</p>
+        {intro && <p class="result-preview__intro">{intro}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function ResultDisplay({
+  result,
+  workflowState,
+  onCreateAnother,
+  onRetryPreview,
+}: ResultDisplayProperties) {
   const [copyNotice, setCopyNotice] = useState('');
-  const copyResetRef = useRef<number | undefined>(undefined);
-  const { feed, preview } = result;
+  const copyResetReference = useRef<ReturnType<typeof globalThis.setTimeout> | undefined>(undefined);
+  const { feed, preview, workflowState: previewWorkflowState, warnings } = result;
 
   const fullUrl = feed.public_url.startsWith('http')
     ? feed.public_url
-    : `${window.location.origin}${feed.public_url}`;
+    : `${globalThis.location.origin}${feed.public_url}`;
   const jsonFeedUrl = feed.json_public_url.startsWith('http')
     ? feed.json_public_url
-    : `${window.location.origin}${feed.json_public_url}`;
-  const subscribeUrl = /^https?:\/\//i.test(fullUrl) ? `feed:${fullUrl}` : null;
+    : `${globalThis.location.origin}${feed.json_public_url}`;
+  const subscribeUrl = /^https?:\/\//i.test(fullUrl) ? `feed:${fullUrl}` : undefined;
+  const canUseFeed = previewWorkflowState !== 'preview_loading';
+  const canManuallyRetryPreview =
+    previewWorkflowState === 'preview_failed' && warnings.some((warning) => warning.retryable);
+  const isPreviewCheckInProgress = preview.isLoading;
+  const statusTitle = {
+    created: 'Feed created',
+    preview_loading: 'Checking preview',
+    preview_ready: 'Feed ready',
+    preview_failed: 'Feed link created',
+  }[previewWorkflowState];
+  const statusMessage = {
+    created: 'Preparing preview.',
+    preview_loading: 'Checking preview...',
+    preview_ready: '',
+    preview_failed: '',
+  }[previewWorkflowState];
+  const previewMessage = warnings[0]?.message ?? '';
+  const hasPreviewItems = preview.items.length > 0;
+  const showResultStatusNote =
+    previewWorkflowState === 'preview_failed' && !preview.isLoading && !hasPreviewItems && !!previewMessage;
+  const showPreviewStatusOnly =
+    !showResultStatusNote &&
+    !preview.isLoading &&
+    !hasPreviewItems &&
+    !!previewMessage &&
+    previewWorkflowState === 'preview_failed';
 
   useEffect(() => {
     return () => {
-      if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
+      if (copyResetReference.current) globalThis.clearTimeout(copyResetReference.current);
     };
   }, []);
 
@@ -30,29 +84,40 @@ export function ResultDisplay({ result, onCreateAnother }: ResultDisplayProps) {
     try {
       await navigator.clipboard.writeText(text);
       setCopyNotice('Feed URL copied to clipboard.');
-      if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
-      copyResetRef.current = window.setTimeout(() => setCopyNotice(''), 2500);
+      if (copyResetReference.current) globalThis.clearTimeout(copyResetReference.current);
+      copyResetReference.current = globalThis.setTimeout(() => setCopyNotice(''), 2500);
     } catch {
       setCopyNotice('Clipboard copy failed. Copy the feed URL manually.');
     }
   };
 
   return (
-    <section class="result-shell layout-stack" aria-live="polite">
-      <header
-        class="result-hero layout-rail-reading layout-stack"
-        style={{ '--stack-gap': 'var(--space-3)' }}
-      >
-        <p class="result-kicker ui-eyebrow">Feed created</p>
-        <h1 class="result-title">Your feed is ready</h1>
-        <p class="result-meta layout-rail-copy">{feed.name}</p>
-        <p class="result-lede layout-rail-copy">Subscribe to this URL in your RSS reader.</p>
-        {result.retry && (
-          <p class="field-help">
-            {`Retried automatically with ${result.retry.to} after ${result.retry.from} could not finish the page.`}
-          </p>
-        )}
-      </header>
+    <section class="result-shell layout-stack" aria-live="polite" data-state={workflowState}>
+      <ResultHero
+        title={statusTitle}
+        body={
+          <>
+            <p class="result-meta layout-rail-copy">{feed.name}</p>
+            {statusMessage && <p class="field-help">{statusMessage}</p>}
+            {showResultStatusNote && (
+              <p class="result-status-note field-help field-help--warning">{previewMessage}</p>
+            )}
+          </>
+        }
+        actions={
+          canManuallyRetryPreview && (
+            <button
+              type="button"
+              class="btn btn--primary"
+              onClick={onRetryPreview}
+              disabled={isPreviewCheckInProgress}
+              aria-busy={isPreviewCheckInProgress}
+            >
+              {isPreviewCheckInProgress ? 'Checking...' : 'Check preview again'}
+            </button>
+          )
+        }
+      />
 
       <DominantField
         className="layout-rail-reading"
@@ -67,38 +132,34 @@ export function ResultDisplay({ result, onCreateAnother }: ResultDisplayProps) {
       />
 
       <div class="result-actions result-actions--quiet layout-rail-reading">
-        {subscribeUrl && (
-          <a href={subscribeUrl} class="btn btn--ghost">
-            Subscribe in reader
-          </a>
+        {canUseFeed && (
+          <>
+            <a href={fullUrl} class="btn btn--primary" target="_blank" rel="noopener noreferrer">
+              Open feed
+            </a>
+            <a href={jsonFeedUrl} class="btn btn--ghost" target="_blank" rel="noopener noreferrer">
+              Open JSON Feed
+            </a>
+            {subscribeUrl && (
+              <a href={subscribeUrl} class="btn btn--ghost result-hero__reader">
+                Open in feed reader
+              </a>
+            )}
+          </>
         )}
-        <a href={fullUrl} class="btn btn--ghost" target="_blank" rel="noopener noreferrer">
-          Open feed
-        </a>
-        <a href={jsonFeedUrl} class="btn btn--ghost" target="_blank" rel="noopener noreferrer">
-          Open JSON Feed
-        </a>
         <button type="button" class="btn btn--quiet btn--linkish" onClick={onCreateAnother}>
           Create another feed
         </button>
       </div>
 
       {preview.isLoading && (
-        <section class="result-preview layout-rail-reading layout-stack" aria-label="Feed preview status">
-          <div class="result-preview__header layout-stack layout-stack--tight">
-            <p class="result-preview__label ui-eyebrow">Preview</p>
-            <p class="result-preview__intro">Latest items from this feed</p>
-          </div>
-          <p class="field-help">Loading preview…</p>
-        </section>
+        <PreviewSection ariaLabel="Feed preview status">
+          <p class="field-help">{previewMessage}</p>
+        </PreviewSection>
       )}
 
-      {preview.items.length > 0 && (
-        <section class="result-preview layout-rail-reading layout-stack" aria-label="Feed preview">
-          <div class="result-preview__header layout-stack layout-stack--tight">
-            <p class="result-preview__label ui-eyebrow">Preview</p>
-            <p class="result-preview__intro">Latest items from this feed</p>
-          </div>
+      {!preview.isLoading && hasPreviewItems && (
+        <PreviewSection ariaLabel="Feed preview" intro="Latest items from this feed">
           <ul class="result-preview__list" role="list">
             {preview.items.map((item) => (
               <li key={`${item.title}-${item.publishedLabel || 'undated'}`}>
@@ -117,17 +178,13 @@ export function ResultDisplay({ result, onCreateAnother }: ResultDisplayProps) {
               </li>
             ))}
           </ul>
-        </section>
+        </PreviewSection>
       )}
 
-      {!preview.isLoading && preview.error && (
-        <section class="result-preview layout-rail-reading layout-stack" aria-label="Feed preview status">
-          <div class="result-preview__header layout-stack layout-stack--tight">
-            <p class="result-preview__label ui-eyebrow">Preview</p>
-            <p class="result-preview__intro">Latest items from this feed</p>
-          </div>
-          <p class="field-help">{preview.error}</p>
-        </section>
+      {showPreviewStatusOnly && (
+        <PreviewSection ariaLabel="Feed preview status">
+          <p class="field-help field-help--warning">{previewMessage}</p>
+        </PreviewSection>
       )}
 
       {copyNotice && (

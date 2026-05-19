@@ -5,16 +5,24 @@ SHELL ["/bin/sh", "-o", "pipefail", "-c"]
 RUN apk add --no-cache \
     bash \
     build-base \
+    chromium \
     curl \
     git \
+    harfbuzz \
     libxml2-dev \
     libxslt-dev \
     nodejs \
+    nss \
     npm \
     openssl-dev \
     python3 \
+    ttf-freefont \
     yaml-dev \
     tzdata
+
+RUN if ! command -v corepack >/dev/null 2>&1; then npm install -g corepack; fi \
+  && corepack enable \
+  && corepack prepare "pnpm@latest" --activate
 
 ARG USER=vscode
 ARG UID=1000

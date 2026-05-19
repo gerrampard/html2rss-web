@@ -34,6 +34,7 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
       }
     }
   end
+  let(:config_snapshot) { Html2rss::Web::ConfigSnapshot.load(accounts_config) }
 
   let(:json_headers) { { 'CONTENT_TYPE' => 'application/json' } }
   let(:auth_headers) { json_headers.merge('HTTP_AUTHORIZATION' => "Bearer #{account[:token]}") }
@@ -46,7 +47,8 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
       message: nil,
       ttl_seconds: 600,
       cache_key: 'feed_result:test',
-      error_message: nil
+      error_message: nil,
+      error_kind: nil
     )
   end
 
@@ -55,7 +57,7 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
   end
 
   before do
-    allow(Html2rss::Web::LocalConfig).to receive(:yaml).and_return(accounts_config)
+    allow(Html2rss::Web::LocalConfig).to receive_messages(global: config_snapshot.global, snapshot: config_snapshot)
     stub_const('Html2rss::FeedChannel', Class.new { attr_reader :ttl })
     stub_const('Html2rss::Feed', Class.new { attr_reader :channel })
     allow(Html2rss::Web::AutoSource).to receive(:enabled?).and_return(true)
@@ -63,6 +65,39 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
     allow(Html2rss::Web::Feeds::RssRenderer).to receive(:call).and_return('<rss version="2.0"></rss>')
     allow(Html2rss::Web::Feeds::JsonRenderer).to receive(:call)
       .and_return('{"version":"https://jsonfeed.org/version/1.1","items":[]}')
+  end
+
+  describe 'GET /create, /token, /result/:token' do # rubocop:disable RSpec/MultipleMemoizedHelpers
+    it 'returns not found for create route', :aggregate_failures do
+      get '/create'
+
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'returns not found for token route', :aggregate_failures do
+      get '/token'
+
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'returns not found for result route', :aggregate_failures do
+      get '/result/generated-token'
+
+      expect(last_response.status).to eq(404)
+    end
+
+    it 'returns not found for SPA app routes in development mode', :aggregate_failures do
+      ClimateControl.modify('RACK_ENV' => 'development') do
+        get '/create'
+        expect(last_response.status).to eq(404)
+
+        get '/token'
+        expect(last_response.status).to eq(404)
+
+        get '/result/generated-token'
+        expect(last_response.status).to eq(404)
+      end
+    end
   end
 
   describe 'GET /api/v1/feeds/:token' do # rubocop:disable RSpec/MultipleMemoizedHelpers
@@ -182,6 +217,18 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
       )
     end
 
+    it 'returns 422 when extraction yields an empty feed warning', :aggregate_failures do
+      unique_empty_url = "#{feed_url}/empty-warning"
+      empty_token = Html2rss::Web::Auth.generate_feed_token(account[:username], unique_empty_url, strategy: 'faraday')
+      stub_empty_feed_warning_result
+
+      get "/api/v1/feeds/#{empty_token}.json"
+
+      expect(last_response.status).to eq(422)
+      expect(last_response.headers['Content-Type']).to eq('application/feed+json')
+      expect(JSON.parse(last_response.body).fetch('title')).to eq('Content Extraction Issue')
+    end
+
     # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     def stub_escaped_feed_token(raw_token:, encoded_token:)
       escaped_token_payload = instance_double(
@@ -197,14 +244,31 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
         .to receive(:validate_and_decode).with(raw_token, feed_url, anything)
         .and_return(escaped_token_payload)
     end
+
+    # @return [void]
+    def stub_empty_feed_warning_result
+      Html2rss::Web::Feeds::Cache.clear!(reason: 'spec')
+      allow(Html2rss::Web::Feeds::Service).to receive(:call).and_return(
+        Html2rss::Web::Feeds::Contracts::RenderResult.new(
+          status: :empty,
+          payload: nil,
+          message: nil,
+          ttl_seconds: 600,
+          cache_key: 'feed_result:empty',
+          error_message: nil,
+          error_kind: nil
+        )
+      )
+      allow(Html2rss::Web::Feeds::JsonRenderer).to receive(:call)
+        .and_return('{"version":"https://jsonfeed.org/version/1.1","title":"Content Extraction Issue","items":[]}')
+    end
     # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
   end
 
   describe 'POST /api/v1/feeds' do # rubocop:disable RSpec/MultipleMemoizedHelpers
     let(:request_payload) do
       {
-        url: feed_url,
-        strategy: 'faraday'
+        url: feed_url
       }
     end
 
@@ -231,7 +295,15 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
 
         expect(last_response.status).to eq(401)
         expect(last_response.content_type).to include('application/json')
-        expect(json_body).to include('error' => include('code' => 'UNAUTHORIZED'))
+        expect(json_body).to include(
+          'error' => include(
+            'code' => 'UNAUTHORIZED',
+            'kind' => 'auth',
+            'retryable' => false,
+            'next_action' => 'enter_token',
+            'retry_action' => 'none'
+          )
+        )
       end
     end
 
@@ -245,7 +317,15 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
 
         expect(last_response.status).to eq(400)
         expect(last_response.content_type).to include('application/json')
-        expect(json_body).to include('error' => include('message' => 'Invalid JSON payload'))
+        expect(json_body).to include(
+          'error' => include(
+            'message' => 'Invalid JSON payload',
+            'kind' => 'input',
+            'retryable' => false,
+            'next_action' => 'correct_input',
+            'retry_action' => 'none'
+          )
+        )
       end
 
       it 'returns bad request when URL is missing' do
@@ -253,7 +333,13 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
 
         expect(last_response.status).to eq(400)
         expect(json_body).to include(
-          'error' => include('message' => 'URL parameter is required')
+          'error' => include(
+            'message' => 'URL parameter is required',
+            'kind' => 'input',
+            'retryable' => false,
+            'next_action' => 'correct_input',
+            'retry_action' => 'none'
+          )
         )
       end
 
@@ -264,16 +350,13 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
 
         expect(last_response.status).to eq(403)
         expect(json_body).to include(
-          'error' => include('message' => 'URL not allowed for this account')
-        )
-      end
-
-      it 'returns bad request for unsupported strategy' do
-        post '/api/v1/feeds', request_payload.merge(strategy: 'unsupported').to_json, auth_headers
-
-        expect(last_response.status).to eq(400)
-        expect(json_body).to include(
-          'error' => include('message' => 'Unsupported strategy')
+          'error' => include(
+            'message' => 'URL not allowed for this account',
+            'kind' => 'input',
+            'retryable' => false,
+            'next_action' => 'correct_input',
+            'retry_action' => 'none'
+          )
         )
       end
 
@@ -284,8 +367,25 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
 
         expect(last_response.status).to eq(500)
         expect(json_body).to include(
-          'error' => include('message' => 'Failed to create feed')
+          'error' => include(
+            'message' => 'Failed to create feed',
+            'kind' => 'server',
+            'retryable' => true,
+            'next_action' => 'retry',
+            'retry_action' => 'primary'
+          )
         )
+      end
+
+      it 'returns corrective extraction-empty failure when auto fallback exhausts' do
+        no_feed_items_extracted = stub_const('Html2rss::NoFeedItemsExtracted', Class.new(Html2rss::Error))
+        allow(Html2rss::Web::AutoSource).to receive(:create_stable_feed)
+          .and_raise(no_feed_items_extracted, 'No feed items extracted after auto fallback')
+
+        post '/api/v1/feeds', request_payload.to_json, auth_headers
+
+        expect(last_response.status).to eq(422)
+        expect(json_body).to include('error' => include(extraction_empty_error_fields))
       end
 
       it 'returns created feed metadata' do
@@ -300,7 +400,21 @@ RSpec.describe Html2rss::Web::App, :aggregate_failures do # rubocop:disable RSpe
           'public_url' => "/api/v1/feeds/#{feed_token}",
           'json_public_url' => "/api/v1/feeds/#{feed_token}.json"
         )
+        expect(json_body.dig('data', 'feed')).not_to have_key('strategy')
+        expect(json_body.fetch('data')).not_to have_key('conversion')
       end
     end
+  end
+
+  # @return [Hash{String=>Object}]
+  def extraction_empty_error_fields
+    {
+      'code' => Html2rss::Web::ErrorResponder::EXTRACTION_EMPTY_CODE,
+      'message' => Html2rss::Web::ErrorResponder::EXTRACTION_EMPTY_MESSAGE,
+      'kind' => 'input',
+      'retryable' => false,
+      'next_action' => 'correct_input',
+      'retry_action' => 'none'
+    }
   end
 end

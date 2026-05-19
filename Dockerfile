@@ -5,10 +5,10 @@ ARG NODE_BASE_IMAGE=node:22-alpine@sha256:8094c002d08262dba12645a3b4a15cd6cd627d
 FROM ${NODE_BASE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Ruby Build
 FROM ${RUBY_BASE_IMAGE} AS builder
@@ -45,9 +45,14 @@ LABEL maintainer="Gil Desmarais <html2rss-web-docker@desmarais.de>"
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
+ARG BUILD_TAG
+ARG GIT_SHA
+
 ENV PORT=4000 \
   RACK_ENV=production \
-  RUBY_YJIT_ENABLE=1
+  RUBY_YJIT_ENABLE=1 \
+  BUILD_TAG=${BUILD_TAG} \
+  GIT_SHA=${GIT_SHA}
 
 EXPOSE $PORT
 
